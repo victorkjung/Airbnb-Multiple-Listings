@@ -31,8 +31,8 @@ A Streamlit application for viewing and filtering booking blocks across multiple
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/airbnb-calendar-dashboard.git
-   cd airbnb-calendar-dashboard
+   git clone https://github.com/victorkjung/Airbnb-Multiple-Listings.git
+   cd Airbnb-Multiple-Listings
    ```
 
 2. **Create a virtual environment (recommended)**
