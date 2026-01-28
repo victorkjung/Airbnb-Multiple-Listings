@@ -11,7 +11,6 @@ from icalendar import Calendar
 import re
 import json
 import os
-import tempfile
 import shutil
 from typing import Optional, Dict, List, Tuple, Any
 import calendar as cal_module
@@ -29,48 +28,43 @@ ICAL_FEEDS = {
 }
 
 LISTING_DISPLAY_NAMES = {
-    "lanesville": "Lanesville (Kaaterskill Cabin)",
-    "milla": "Milla (Tiny Cabin Under Stars)",
-    "westkill": "West Kill (Brewery/Falls)",
-    "millerroad": "Miller Road (Phoenicia/Hunter)",
+    "lanesville": "Lanesville",
+    "milla": "Milla",
+    "westkill": "West Kill",
+    "millerroad": "Miller Road",
+}
+
+LISTING_COLORS = {
+    "lanesville": "#F87171",  # Coral red
+    "milla": "#2DD4BF",       # Teal
+    "westkill": "#FB923C",    # Orange
+    "millerroad": "#6B7280",  # Gray
+    "unknown": "#9CA3AF",
+}
+
+LISTING_LETTERS = {
+    "lanesville": "L",
+    "milla": "M", 
+    "westkill": "W",
+    "millerroad": "M",
 }
 
 # Weighted keyword classifier scoring
 CLASSIFIER_WEIGHTS = {
     "lanesville": {
-        "kaaterskill": 3,
-        "firepit": 2,
-        "sauna": 2,
-        "hottub": 1,
-        "cabin": 1,
+        "kaaterskill": 3, "firepit": 2, "sauna": 2, "hottub": 1, "cabin": 1,
     },
     "milla": {
-        "tiny": 3,
-        "under": 2,
-        "stars": 2,
-        "sauna": 2,
-        "hottub": 1,
-        "cabin": 1,
+        "tiny": 3, "under": 2, "stars": 2, "sauna": 2, "hottub": 1, "cabin": 1,
     },
     "westkill": {
-        "west": 3,
-        "kill": 3,
-        "brewery": 3,
-        "kaaterskill": 2,
-        "falls": 2,
-        "modern": 1,
-        "cabin": 1,
+        "west": 3, "kill": 3, "brewery": 3, "kaaterskill": 2, "falls": 2, "modern": 1, "cabin": 1,
     },
     "millerroad": {
-        "phoenicia": 3,
-        "hunter": 3,
-        "slopes": 2,
-        "modern": 2,
-        "cabin": 1,
+        "phoenicia": 3, "hunter": 3, "slopes": 2, "modern": 2, "cabin": 1,
     },
 }
 
-# Compound token mapping
 COMPOUND_TOKENS = {
     ("hot", "tub"): "hottub",
     ("fire", "pit"): "firepit",
@@ -83,7 +77,6 @@ DEFAULT_ALIAS_STORE_PATH = "listing_aliases.json"
 # ============================================================================
 
 def canonicalize_listing(text: str) -> str:
-    """Canonicalize listing text for matching."""
     if not text or pd.isna(text):
         return ""
     text = str(text).casefold().strip()
@@ -93,7 +86,6 @@ def canonicalize_listing(text: str) -> str:
 
 
 def tokenize_with_compounds(text: str) -> List[str]:
-    """Tokenize text and detect compound words."""
     tokens = text.split()
     result = []
     i = 0
@@ -110,20 +102,11 @@ def tokenize_with_compounds(text: str) -> List[str]:
 
 
 def classify_listing(listing_norm: str) -> Dict[str, Any]:
-    """Classify a normalized listing string into a listing key."""
     if not listing_norm:
-        return {
-            "listing_key": "unknown",
-            "confidence": 0.0,
-            "max_score": 0,
-            "second_score": 0,
-            "matched_terms": [],
-            "scores": {},
-        }
+        return {"listing_key": "unknown", "confidence": 0.0, "max_score": 0, "second_score": 0, "matched_terms": [], "scores": {}}
     
     tokens = tokenize_with_compounds(listing_norm)
     token_set = set(tokens)
-    
     scores = {}
     term_matches = {}
     
@@ -141,7 +124,6 @@ def classify_listing(listing_norm: str) -> Dict[str, Any]:
     max_key, max_score = sorted_scores[0]
     second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0
     
-    # Decision rule: max_score >= 4 AND (max_score - second_score) >= 2
     if max_score < 4 or (max_score - second_score) < 2:
         listing_key = "unknown"
         confidence = 0.0
@@ -149,18 +131,11 @@ def classify_listing(listing_norm: str) -> Dict[str, Any]:
         listing_key = max_key
         confidence = min(1.0, max_score / 10.0) * min(1.0, (max_score - second_score) / 4.0)
     
-    return {
-        "listing_key": listing_key,
-        "confidence": confidence,
-        "max_score": max_score,
-        "second_score": second_score,
-        "matched_terms": term_matches.get(max_key, []),
-        "scores": scores,
-    }
+    return {"listing_key": listing_key, "confidence": confidence, "max_score": max_score, 
+            "second_score": second_score, "matched_terms": term_matches.get(max_key, []), "scores": scores}
 
 
 def is_strong_classification(result: Dict[str, Any]) -> bool:
-    """Check if classification is strong enough for auto-learning."""
     return result["max_score"] >= 6 and (result["max_score"] - result["second_score"]) >= 3
 
 # ============================================================================
@@ -168,32 +143,23 @@ def is_strong_classification(result: Dict[str, Any]) -> bool:
 # ============================================================================
 
 def get_default_alias_store() -> Dict:
-    """Return empty alias store structure."""
-    return {
-        "version": 1,
-        "updated_at": datetime.now().isoformat(),
-        "aliases": {},
-    }
+    return {"version": 1, "updated_at": datetime.now().isoformat(), "aliases": {}}
 
 
 def load_alias_store(path: str) -> Dict:
-    """Load alias store from JSON file."""
     if not os.path.exists(path):
         return get_default_alias_store()
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict) or "aliases" not in data:
-            st.warning(f"Alias store at {path} has invalid format. Using empty store.")
             return get_default_alias_store()
         return data
-    except (json.JSONDecodeError, IOError) as e:
-        st.warning(f"Could not load alias store: {e}. Using empty store.")
+    except (json.JSONDecodeError, IOError):
         return get_default_alias_store()
 
 
 def save_alias_store(store: Dict, path: str) -> bool:
-    """Save alias store atomically."""
     try:
         store["updated_at"] = datetime.now().isoformat()
         tmp_path = path + ".tmp"
@@ -201,14 +167,12 @@ def save_alias_store(store: Dict, path: str) -> bool:
             json.dump(store, f, indent=2)
         shutil.move(tmp_path, path)
         return True
-    except (IOError, OSError) as e:
-        st.error(f"Could not save alias store: {e}")
+    except (IOError, OSError):
         return False
 
 
 def add_alias(store: Dict, listing_norm: str, listing_key: str, source: str, 
               confidence: float, raw_example: str) -> Dict:
-    """Add or update an alias in the store."""
     now = datetime.now().isoformat()
     if listing_norm in store["aliases"]:
         entry = store["aliases"][listing_norm]
@@ -221,12 +185,8 @@ def add_alias(store: Dict, listing_norm: str, listing_key: str, source: str,
             entry["raw_examples"] = entry["raw_examples"][-5:]
     else:
         store["aliases"][listing_norm] = {
-            "listing_key": listing_key,
-            "source": source,
-            "confidence": confidence,
-            "first_seen": now,
-            "last_seen": now,
-            "raw_examples": [raw_example] if raw_example else [],
+            "listing_key": listing_key, "source": source, "confidence": confidence,
+            "first_seen": now, "last_seen": now, "raw_examples": [raw_example] if raw_example else [],
         }
     return store
 
@@ -236,7 +196,6 @@ def add_alias(store: Dict, listing_norm: str, listing_key: str, source: str,
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_ical(url: str, listing_key: str) -> Tuple[Optional[str], Optional[str]]:
-    """Fetch iCal data from URL with caching."""
     try:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
@@ -245,9 +204,7 @@ def fetch_ical(url: str, listing_key: str) -> Tuple[Optional[str], Optional[str]
         return None, f"Failed to fetch {listing_key}: {str(e)}"
 
 
-def parse_ical_to_df(ical_text: str, listing_key: str, listing_name: str, 
-                     source_url: str) -> pd.DataFrame:
-    """Parse iCal text into a DataFrame of blocked date ranges."""
+def parse_ical_to_df(ical_text: str, listing_key: str, listing_name: str, source_url: str) -> pd.DataFrame:
     events = []
     try:
         cal = Calendar.from_ical(ical_text)
@@ -270,18 +227,11 @@ def parse_ical_to_df(ical_text: str, listing_key: str, listing_name: str,
                     else:
                         end_date = start_date + timedelta(days=1)
                     
-                    # DTEND is exclusive in iCal
                     nights_blocked = (end_date - start_date).days
-                    
                     events.append({
-                        "listing_key": listing_key,
-                        "listing_name": listing_name,
-                        "event_uid": uid,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "nights_blocked": nights_blocked,
-                        "summary": summary,
-                        "source_url": source_url,
+                        "listing_key": listing_key, "listing_name": listing_name,
+                        "event_uid": uid, "start_date": start_date, "end_date": end_date,
+                        "nights_blocked": nights_blocked, "summary": summary, "source_url": source_url,
                     })
     except Exception as e:
         st.warning(f"Error parsing iCal for {listing_key}: {e}")
@@ -290,7 +240,6 @@ def parse_ical_to_df(ical_text: str, listing_key: str, listing_name: str,
 
 
 def fetch_all_ical_feeds() -> Tuple[pd.DataFrame, Dict[str, str]]:
-    """Fetch and parse all iCal feeds, returning combined DataFrame and errors."""
     all_events = []
     errors = {}
     
@@ -319,7 +268,6 @@ def fetch_all_ical_feeds() -> Tuple[pd.DataFrame, Dict[str, str]]:
 # ============================================================================
 
 def parse_currency(value: Any) -> float:
-    """Parse currency string to float."""
     if pd.isna(value):
         return 0.0
     s = str(value).strip()
@@ -331,7 +279,6 @@ def parse_currency(value: Any) -> float:
 
 
 def parse_date_flexible(value: Any) -> Optional[date]:
-    """Parse date from various formats."""
     if pd.isna(value):
         return None
     if isinstance(value, date):
@@ -340,10 +287,7 @@ def parse_date_flexible(value: Any) -> Optional[date]:
         return value.date()
     
     s = str(value).strip()
-    formats = [
-        "%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y",
-        "%m-%d-%Y", "%m-%d-%y", "%Y/%m/%d",
-    ]
+    formats = ["%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%m-%d-%Y", "%m-%d-%y", "%Y/%m/%d"]
     for fmt in formats:
         try:
             return datetime.strptime(s, fmt).date()
@@ -353,13 +297,11 @@ def parse_date_flexible(value: Any) -> Optional[date]:
 
 
 def get_file_hash(content: bytes) -> str:
-    """Generate hash of file content for caching."""
     return hashlib.md5(content).hexdigest()
 
 
 @st.cache_data(show_spinner=False)
 def load_reservations_csv(content: bytes, _hash: str, alias_store_path: str) -> Tuple[pd.DataFrame, List[str], Dict]:
-    """Load and normalize reservations CSV."""
     warnings = []
     alias_store = load_alias_store(alias_store_path)
     
@@ -369,66 +311,45 @@ def load_reservations_csv(content: bytes, _hash: str, alias_store_path: str) -> 
     except Exception as e:
         return pd.DataFrame(), [f"Failed to parse CSV: {e}"], alias_store
     
-    # Column mapping
     column_map = {
-        "Confirmation code": "reservation_id",
-        "Status": "status",
-        "Guest name": "guest_name",
-        "Contact": "contact",
-        "# of adults": "adults",
-        "# of children": "children",
-        "# of infants": "infants",
-        "Start date": "checkin_date",
-        "End date": "checkout_date",
-        "# of nights": "nights",
-        "Booked": "booked_on",
-        "Listing": "listing_raw",
-        "Earnings": "earnings",
+        "Confirmation code": "reservation_id", "Status": "status", "Guest name": "guest_name",
+        "Contact": "contact", "# of adults": "adults", "# of children": "children",
+        "# of infants": "infants", "Start date": "checkin_date", "End date": "checkout_date",
+        "# of nights": "nights", "Booked": "booked_on", "Listing": "listing_raw", "Earnings": "earnings",
     }
     
-    # Rename columns
     df = df.rename(columns={k: v for k, v in column_map.items() if k in df.columns})
     
-    # Parse numeric columns
     for col in ["adults", "children", "infants", "nights"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
     
-    # Parse dates
     if "checkin_date" in df.columns:
         df["checkin_date"] = df["checkin_date"].apply(parse_date_flexible)
     if "checkout_date" in df.columns:
         df["checkout_date"] = df["checkout_date"].apply(parse_date_flexible)
     if "booked_on" in df.columns:
         df["booked_on"] = df["booked_on"].apply(parse_date_flexible)
-    
-    # Parse earnings
     if "earnings" in df.columns:
         df["earnings"] = df["earnings"].apply(parse_currency)
     
-    # Classify listings
     if "listing_raw" in df.columns:
         df["listing_norm"] = df["listing_raw"].apply(canonicalize_listing)
         
-        listing_keys = []
-        listing_sources = []
-        new_aliases = []
+        listing_keys, listing_sources, new_aliases = [], [], []
         
         for idx, row in df.iterrows():
             listing_norm = row["listing_norm"]
             listing_raw = row.get("listing_raw", "")
             
-            # Check alias store first
             if listing_norm in alias_store["aliases"]:
                 key = alias_store["aliases"][listing_norm]["listing_key"]
                 source = "alias"
             else:
-                # Use classifier
                 result = classify_listing(listing_norm)
                 key = result["listing_key"]
                 source = "classifier"
                 
-                # Auto-learn strong classifications
                 if key != "unknown" and is_strong_classification(result):
                     new_aliases.append((listing_norm, key, result["confidence"], listing_raw))
             
@@ -438,11 +359,9 @@ def load_reservations_csv(content: bytes, _hash: str, alias_store_path: str) -> 
         df["listing_key"] = listing_keys
         df["listing_source"] = listing_sources
         
-        # Add new auto-learned aliases
         for norm, key, conf, raw in new_aliases:
             alias_store = add_alias(alias_store, norm, key, "auto", conf, raw)
     
-    # Compute nights mismatch
     if "checkin_date" in df.columns and "checkout_date" in df.columns and "nights" in df.columns:
         def compute_nights(row):
             if row["checkin_date"] and row["checkout_date"]:
@@ -450,11 +369,9 @@ def load_reservations_csv(content: bytes, _hash: str, alias_store_path: str) -> 
             return None
         df["computed_nights"] = df.apply(compute_nights, axis=1)
         df["nights_mismatch"] = df.apply(
-            lambda r: r["computed_nights"] != r["nights"] if r["computed_nights"] is not None else False,
-            axis=1
+            lambda r: r["computed_nights"] != r["nights"] if r["computed_nights"] is not None else False, axis=1
         )
     
-    # Drop rows with invalid dates
     valid_mask = df["checkin_date"].notna() & df["checkout_date"].notna()
     invalid_count = (~valid_mask).sum()
     if invalid_count > 0:
@@ -468,18 +385,12 @@ def load_reservations_csv(content: bytes, _hash: str, alias_store_path: str) -> 
 # ============================================================================
 
 def enrich_ical_events(ical_df: pd.DataFrame, res_df: pd.DataFrame) -> pd.DataFrame:
-    """Enrich iCal events with reservation data."""
     if ical_df.empty:
         return ical_df
     
     enriched = ical_df.copy()
-    
-    # Initialize enrichment columns
-    enrichment_cols = [
-        "reservation_id", "status", "guest_name", "contact", 
-        "adults", "children", "infants", "earnings", "booked_on",
-        "match_confidence", "match_type"
-    ]
+    enrichment_cols = ["reservation_id", "status", "guest_name", "contact", 
+                       "adults", "children", "infants", "earnings", "booked_on", "match_confidence", "match_type"]
     for col in enrichment_cols:
         enriched[col] = None
     enriched["match_confidence"] = "none"
@@ -493,36 +404,29 @@ def enrich_ical_events(ical_df: pd.DataFrame, res_df: pd.DataFrame) -> pd.DataFr
         event_start = event["start_date"]
         event_end = event["end_date"]
         
-        # Filter reservations for this listing
         listing_res = res_df[res_df["listing_key"] == listing_key]
         if listing_res.empty:
             continue
         
-        # Try exact date match first
         exact_match = listing_res[
-            (listing_res["checkin_date"] == event_start) & 
-            (listing_res["checkout_date"] == event_end)
+            (listing_res["checkin_date"] == event_start) & (listing_res["checkout_date"] == event_end)
         ]
         
         if not exact_match.empty:
             match = exact_match.iloc[0]
-            for col in ["reservation_id", "status", "guest_name", "contact", 
-                       "adults", "children", "infants", "earnings", "booked_on"]:
+            for col in ["reservation_id", "status", "guest_name", "contact", "adults", "children", "infants", "earnings", "booked_on"]:
                 if col in match.index:
                     enriched.at[idx, col] = match[col]
             enriched.at[idx, "match_confidence"] = "high"
             enriched.at[idx, "match_type"] = "exact"
             continue
         
-        # Try overlap match
         best_overlap = 0
         best_match = None
         
         for _, res in listing_res.iterrows():
             res_start = res["checkin_date"]
             res_end = res["checkout_date"]
-            
-            # Calculate overlap
             overlap_start = max(event_start, res_start)
             overlap_end = min(event_end, res_end)
             
@@ -530,15 +434,13 @@ def enrich_ical_events(ical_df: pd.DataFrame, res_df: pd.DataFrame) -> pd.DataFr
                 overlap_nights = (overlap_end - overlap_start).days
                 res_nights = (res_end - res_start).days
                 
-                # Require overlap >= 2 nights OR >= 50% of reservation
                 if overlap_nights >= 2 or (res_nights > 0 and overlap_nights / res_nights >= 0.5):
                     if overlap_nights > best_overlap:
                         best_overlap = overlap_nights
                         best_match = res
         
         if best_match is not None:
-            for col in ["reservation_id", "status", "guest_name", "contact", 
-                       "adults", "children", "infants", "earnings", "booked_on"]:
+            for col in ["reservation_id", "status", "guest_name", "contact", "adults", "children", "infants", "earnings", "booked_on"]:
                 if col in best_match.index:
                     enriched.at[idx, col] = best_match[col]
             enriched.at[idx, "match_confidence"] = "medium"
@@ -548,24 +450,14 @@ def enrich_ical_events(ical_df: pd.DataFrame, res_df: pd.DataFrame) -> pd.DataFr
 
 
 def audit_mismatches(ical_df: pd.DataFrame, res_df: pd.DataFrame, 
-                     start_date: date, end_date: date, 
-                     listing_filter: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Audit mismatches between iCal and CSV data."""
-    # Filter by date range and listings
+                     start_date: date, end_date: date, listing_filter: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     ical_filtered = ical_df[
-        (ical_df["start_date"] < end_date) & 
-        (ical_df["end_date"] > start_date) &
-        (ical_df["listing_key"].isin(listing_filter))
+        (ical_df["start_date"] < end_date) & (ical_df["end_date"] > start_date) & (ical_df["listing_key"].isin(listing_filter))
     ]
-    
-    # iCal events without CSV match
     unmatched_ical = ical_filtered[ical_filtered["match_confidence"] == "none"].copy()
     
-    # CSV reservations without iCal match
     res_filtered = res_df[
-        (res_df["checkin_date"] < end_date) & 
-        (res_df["checkout_date"] > start_date) &
-        (res_df["listing_key"].isin(listing_filter))
+        (res_df["checkin_date"] < end_date) & (res_df["checkout_date"] > start_date) & (res_df["listing_key"].isin(listing_filter))
     ]
     
     unmatched_res = []
@@ -574,17 +466,12 @@ def audit_mismatches(ical_df: pd.DataFrame, res_df: pd.DataFrame,
         res_start = res["checkin_date"]
         res_end = res["checkout_date"]
         
-        # Check if any iCal event overlaps with this reservation
         ical_listing = ical_filtered[ical_filtered["listing_key"] == listing_key]
         has_overlap = False
         
         for _, event in ical_listing.iterrows():
-            event_start = event["start_date"]
-            event_end = event["end_date"]
-            
-            overlap_start = max(event_start, res_start)
-            overlap_end = min(event_end, res_end)
-            
+            overlap_start = max(event["start_date"], res_start)
+            overlap_end = min(event["end_date"], res_end)
             if overlap_start < overlap_end:
                 has_overlap = True
                 break
@@ -593,73 +480,324 @@ def audit_mismatches(ical_df: pd.DataFrame, res_df: pd.DataFrame,
             unmatched_res.append(res)
     
     unmatched_res_df = pd.DataFrame(unmatched_res) if unmatched_res else pd.DataFrame()
-    
     return unmatched_ical, unmatched_res_df
 
 # ============================================================================
-# UI COMPONENTS
+# CALENDAR RENDERING
 # ============================================================================
 
-def render_month_calendar(enriched_df: pd.DataFrame, year: int, month: int, 
-                         listing_filter: List[str]):
-    """Render a month calendar grid with events."""
+def get_events_for_month(enriched_df: pd.DataFrame, year: int, month: int, listing_filter: List[str]) -> pd.DataFrame:
+    """Get events that overlap with the given month."""
+    first_day = date(year, month, 1)
+    if month == 12:
+        last_day = date(year + 1, 1, 1)
+    else:
+        last_day = date(year, month + 1, 1)
+    
+    filtered = enriched_df[
+        (enriched_df["start_date"] < last_day) & 
+        (enriched_df["end_date"] > first_day) &
+        (enriched_df["listing_key"].isin(listing_filter))
+    ].copy()
+    
+    return filtered
+
+
+def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listing_filter: List[str]) -> str:
+    """Render the calendar as HTML with spanning event bars."""
+    
+    events = get_events_for_month(enriched_df, year, month, listing_filter)
+    
+    # Get calendar structure
     cal = cal_module.Calendar(firstweekday=6)  # Sunday first
     month_days = cal.monthdayscalendar(year, month)
     month_name = cal_module.month_name[month]
     
-    st.subheader(f"{month_name} {year}")
+    # First and last day of month
+    first_of_month = date(year, month, 1)
+    if month == 12:
+        first_of_next = date(year + 1, 1, 1)
+    else:
+        first_of_next = date(year, month + 1, 1)
+    last_of_month = first_of_next - timedelta(days=1)
     
-    # Create header
-    cols = st.columns(7)
-    for i, day_name in enumerate(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]):
-        cols[i].markdown(f"**{day_name}**")
+    # Build event segments for each row (week)
+    # For each event, we need to track which weeks it spans and create segments
     
-    # Color map for listings
-    colors = {
-        "lanesville": "#FF6B6B",
-        "milla": "#4ECDC4",
-        "westkill": "#45B7D1",
-        "millerroad": "#96CEB4",
-        "unknown": "#95A5A6",
-    }
-    
-    # Render weeks
-    for week in month_days:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day == 0:
-                cols[i].write("")
-            else:
-                current_date = date(year, month, day)
-                
-                # Find events for this day
-                day_events = enriched_df[
-                    (enriched_df["start_date"] <= current_date) & 
-                    (enriched_df["end_date"] > current_date) &
-                    (enriched_df["listing_key"].isin(listing_filter))
-                ]
-                
-                with cols[i]:
-                    st.write(f"**{day}**")
-                    for _, event in day_events.iterrows():
-                        listing_key = event["listing_key"]
-                        color = colors.get(listing_key, "#95A5A6")
-                        
-                        if event.get("match_confidence") != "none" and pd.notna(event.get("guest_name")):
-                            guest = str(event["guest_name"])[:15]
-                            earnings = event.get("earnings", 0)
-                            label = f"{guest}"
-                            if earnings and earnings > 0:
-                                label += f" (${earnings:.0f})"
+    def get_week_segments(events_df, month_days, year, month):
+        """Calculate event segments for each week row."""
+        segments_by_week = [[] for _ in range(len(month_days))]
+        
+        for _, event in events_df.iterrows():
+            event_start = event["start_date"]
+            event_end = event["end_date"] - timedelta(days=1)  # End date is exclusive, show last night
+            
+            for week_idx, week in enumerate(month_days):
+                week_dates = []
+                for day_idx, day in enumerate(week):
+                    if day == 0:
+                        # Calculate actual date for padding days
+                        if week_idx == 0:
+                            # Days from previous month
+                            prev_month_day = first_of_month - timedelta(days=(7 - day_idx - week.index(next(d for d in week if d > 0))))
+                            week_dates.append(None)
                         else:
-                            label = "Blocked"
+                            week_dates.append(None)
+                    else:
+                        week_dates.append(date(year, month, day))
+                
+                # Find valid date range for this week
+                valid_dates = [d for d in week_dates if d is not None]
+                if not valid_dates:
+                    continue
+                    
+                week_start = valid_dates[0]
+                week_end = valid_dates[-1]
+                
+                # Check if event overlaps with this week
+                if event_start <= week_end and event_end >= week_start:
+                    # Calculate segment within this week
+                    seg_start = max(event_start, week_start)
+                    seg_end = min(event_end, week_end)
+                    
+                    # Find column indices
+                    start_col = None
+                    end_col = None
+                    for col_idx, d in enumerate(week_dates):
+                        if d == seg_start:
+                            start_col = col_idx
+                        if d == seg_end:
+                            end_col = col_idx
+                    
+                    # Handle cases where segment extends beyond visible days
+                    if start_col is None:
+                        for col_idx, day in enumerate(week):
+                            if day > 0:
+                                start_col = col_idx
+                                break
+                    if end_col is None:
+                        for col_idx in range(6, -1, -1):
+                            if week[col_idx] > 0:
+                                end_col = col_idx
+                                break
+                    
+                    if start_col is not None and end_col is not None:
+                        segments_by_week[week_idx].append({
+                            "event": event,
+                            "start_col": start_col,
+                            "end_col": end_col,
+                            "span": end_col - start_col + 1,
+                        })
+        
+        return segments_by_week
+    
+    segments_by_week = get_week_segments(events, month_days, year, month)
+    
+    # Assign rows to segments to avoid overlaps
+    def assign_rows(segments):
+        """Assign vertical row positions to segments to avoid overlaps."""
+        if not segments:
+            return []
+        
+        # Sort by start column
+        sorted_segs = sorted(segments, key=lambda s: (s["start_col"], -s["span"]))
+        
+        rows = []  # List of end columns for each row
+        result = []
+        
+        for seg in sorted_segs:
+            # Find first row where this segment fits
+            assigned_row = None
+            for row_idx, row_end in enumerate(rows):
+                if seg["start_col"] > row_end:
+                    assigned_row = row_idx
+                    rows[row_idx] = seg["end_col"]
+                    break
+            
+            if assigned_row is None:
+                assigned_row = len(rows)
+                rows.append(seg["end_col"])
+            
+            result.append({**seg, "row": assigned_row})
+        
+        return result
+    
+    # CSS styles
+    css = """
+    <style>
+    .calendar-container {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #1a1a2e;
+        border-radius: 12px;
+        padding: 20px;
+        color: white;
+    }
+    .calendar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .month-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #4ECDC4;
+    }
+    .legend {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 15px;
+        padding: 10px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 8px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+    .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 1px;
+        background: #2d2d44;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .calendar-header-cell {
+        background: #252538;
+        padding: 12px 8px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 12px;
+        color: #888;
+        text-transform: uppercase;
+    }
+    .calendar-week {
+        display: contents;
+    }
+    .calendar-cell {
+        background: #1e1e32;
+        min-height: 100px;
+        padding: 8px;
+        position: relative;
+        vertical-align: top;
+    }
+    .calendar-cell.empty {
+        background: #18182a;
+    }
+    .day-number {
+        font-size: 14px;
+        font-weight: 500;
+        color: #ccc;
+        margin-bottom: 4px;
+    }
+    .events-container {
+        position: relative;
+        margin-top: 4px;
+    }
+    .event-bar {
+        position: absolute;
+        height: 26px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        font-size: 12px;
+        font-weight: 500;
+        color: white;
+        overflow: hidden;
+        white-space: nowrap;
+        box-sizing: border-box;
+    }
+    .event-letter {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        margin-right: 6px;
+        flex-shrink: 0;
+    }
+    .event-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    </style>
+    """
+    
+    # Build HTML
+    html_parts = [css, '<div class="calendar-container">']
+    
+    # Legend
+    html_parts.append('<div class="legend">')
+    for key in listing_filter:
+        color = LISTING_COLORS.get(key, "#888")
+        name = LISTING_DISPLAY_NAMES.get(key, key)
+        html_parts.append(f'''
+            <div class="legend-item">
+                <div class="legend-dot" style="background:{color}"></div>
+                <span>{name}</span>
+            </div>
+        ''')
+    html_parts.append('</div>')
+    
+    # Calendar grid
+    html_parts.append('<div class="calendar-grid">')
+    
+    # Header row
+    for day_name in ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]:
+        html_parts.append(f'<div class="calendar-header-cell">{day_name}</div>')
+    
+    # Week rows
+    for week_idx, week in enumerate(month_days):
+        week_segments = assign_rows(segments_by_week[week_idx])
+        max_rows = max([s["row"] for s in week_segments], default=-1) + 1
+        cell_height = max(100, 40 + max_rows * 30)
+        
+        for day_idx, day in enumerate(week):
+            if day == 0:
+                html_parts.append(f'<div class="calendar-cell empty" style="min-height:{cell_height}px"></div>')
+            else:
+                html_parts.append(f'<div class="calendar-cell" style="min-height:{cell_height}px">')
+                html_parts.append(f'<div class="day-number">{day}</div>')
+                html_parts.append('<div class="events-container">')
+                
+                # Add event bars that start on this day
+                for seg in week_segments:
+                    if seg["start_col"] == day_idx:
+                        event = seg["event"]
+                        listing_key = event["listing_key"]
+                        color = LISTING_COLORS.get(listing_key, "#888")
+                        letter = LISTING_LETTERS.get(listing_key, "?")
+                        name = LISTING_DISPLAY_NAMES.get(listing_key, listing_key)
                         
-                        st.markdown(
-                            f'<span style="background-color:{color};color:white;'
-                            f'padding:2px 6px;border-radius:3px;font-size:11px;">'
-                            f'{listing_key[:4]}: {label}</span>',
-                            unsafe_allow_html=True
-                        )
+                        # Calculate width as percentage
+                        width_percent = seg["span"] * 100
+                        top_offset = seg["row"] * 30
+                        
+                        html_parts.append(f'''
+                            <div class="event-bar" style="background:{color}; width:calc({width_percent}% + {(seg["span"]-1)}px); top:{top_offset}px; left:0;">
+                                <span class="event-letter">{letter}</span>
+                                <span class="event-name">{name}</span>
+                            </div>
+                        ''')
+                
+                html_parts.append('</div></div>')
+    
+    html_parts.append('</div></div>')
+    
+    return ''.join(html_parts)
 
 
 def render_list_view(enriched_df: pd.DataFrame, start_date: date, end_date: date,
@@ -678,30 +816,18 @@ def render_list_view(enriched_df: pd.DataFrame, start_date: date, end_date: date
         st.info("No events found for the selected criteria.")
         return
     
-    # Prepare display columns
-    display_cols = [
-        "listing_name", "start_date", "end_date", "nights_blocked",
-        "guest_name", "status", "earnings", "match_confidence"
-    ]
+    display_cols = ["listing_name", "start_date", "end_date", "nights_blocked", "guest_name", "status", "earnings", "match_confidence"]
     display_cols = [c for c in display_cols if c in filtered.columns]
     
     filtered_display = filtered[display_cols].sort_values(["start_date", "listing_name"])
-    
     st.dataframe(filtered_display, use_container_width=True, hide_index=True)
     
-    # Export button
     csv_data = filtered.to_csv(index=False)
-    st.download_button(
-        "📥 Export to CSV",
-        csv_data,
-        "calendar_events.csv",
-        "text/csv",
-    )
+    st.download_button("📥 Export to CSV", csv_data, "calendar_events.csv", "text/csv")
 
 
 def render_summary(enriched_df: pd.DataFrame, res_df: pd.DataFrame,
-                  start_date: date, end_date: date, listing_filter: List[str],
-                  csv_enabled: bool):
+                  start_date: date, end_date: date, listing_filter: List[str], csv_enabled: bool):
     """Render summary statistics."""
     filtered = enriched_df[
         (enriched_df["start_date"] < end_date) & 
@@ -725,35 +851,23 @@ def render_summary(enriched_df: pd.DataFrame, res_df: pd.DataFrame,
             )
             st.dataframe(earnings_summary, use_container_width=True, hide_index=True)
         
-        # Mismatches
-        unmatched_ical, unmatched_res = audit_mismatches(
-            enriched_df, res_df, start_date, end_date, listing_filter
-        )
+        unmatched_ical, unmatched_res = audit_mismatches(enriched_df, res_df, start_date, end_date, listing_filter)
         
         if not unmatched_ical.empty:
             st.subheader(f"⚠️ iCal Blocks Without CSV Match ({len(unmatched_ical)})")
             display_cols = ["listing_name", "start_date", "end_date", "nights_blocked", "summary"]
             display_cols = [c for c in display_cols if c in unmatched_ical.columns]
             st.dataframe(unmatched_ical[display_cols], use_container_width=True, hide_index=True)
-            
-            csv_data = unmatched_ical.to_csv(index=False)
-            st.download_button(
-                "📥 Export Unmatched iCal",
-                csv_data,
-                "unmatched_ical.csv",
-                "text/csv",
-            )
+            st.download_button("📥 Export Unmatched iCal", unmatched_ical.to_csv(index=False), "unmatched_ical.csv", "text/csv")
         
         if not unmatched_res.empty:
             st.subheader(f"⚠️ CSV Reservations Without iCal Match ({len(unmatched_res)})")
-            display_cols = ["listing_key", "reservation_id", "guest_name", "checkin_date", 
-                          "checkout_date", "status", "earnings"]
+            display_cols = ["listing_key", "reservation_id", "guest_name", "checkin_date", "checkout_date", "status", "earnings"]
             display_cols = [c for c in display_cols if c in unmatched_res.columns]
             st.dataframe(unmatched_res[display_cols], use_container_width=True, hide_index=True)
 
 
-def render_diagnostics(res_df: pd.DataFrame, alias_store: Dict, 
-                      feed_errors: Dict[str, str]):
+def render_diagnostics(res_df: pd.DataFrame, alias_store: Dict, feed_errors: Dict[str, str]):
     """Render diagnostics view."""
     st.subheader("Feed Status")
     for key in ICAL_FEEDS:
@@ -778,17 +892,14 @@ def render_diagnostics(res_df: pd.DataFrame, alias_store: Dict,
         if not unknown.empty:
             unknown_counts = unknown.groupby("listing_raw").size().reset_index(name="Count")
             unknown_counts = unknown_counts.sort_values("Count", ascending=False)
-            
             st.dataframe(unknown_counts, use_container_width=True, hide_index=True)
             
-            # Show classifier scores for each unknown
             st.write("**Classification Scores:**")
             for listing_raw in unknown["listing_raw"].unique()[:5]:
                 listing_norm = canonicalize_listing(listing_raw)
                 result = classify_listing(listing_norm)
                 st.write(f"- **{listing_raw[:50]}...**")
-                st.write(f"  Scores: {result['scores']}")
-                st.write(f"  Max: {result['max_score']}, 2nd: {result['second_score']}")
+                st.write(f"  Scores: {result['scores']}, Max: {result['max_score']}, 2nd: {result['second_score']}")
         else:
             st.success("All listings successfully classified!")
 
@@ -797,31 +908,52 @@ def render_diagnostics(res_df: pd.DataFrame, alias_store: Dict,
 # ============================================================================
 
 def main():
-    st.set_page_config(
-        page_title="Airbnb Calendar Manager",
-        page_icon="🏠",
-        layout="wide",
-    )
+    st.set_page_config(page_title="Multi-Listing Calendar Dashboard", page_icon="🏠", layout="wide")
     
-    st.title("🏠 Airbnb Multi-Listing Calendar")
+    # Custom CSS for dark theme
+    st.markdown("""
+    <style>
+    .main-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+    }
+    .main-header h1 {
+        margin: 0;
+        font-size: 32px;
+    }
+    .subtitle {
+        color: #888;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    # Initialize session state
-    if "alias_store" not in st.session_state:
-        st.session_state.alias_store = None
-    if "res_df" not in st.session_state:
-        st.session_state.res_df = pd.DataFrame()
-    if "csv_warnings" not in st.session_state:
-        st.session_state.csv_warnings = []
+    st.markdown('<div class="main-header"><span style="font-size:40px">🏠</span><h1>Multi-Listing Calendar Dashboard</h1></div>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">View and filter booking blocks across multiple Airbnb listings</p>', unsafe_allow_html=True)
+    
+    # Initialize session state for month navigation
+    if "view_year" not in st.session_state:
+        st.session_state.view_year = date.today().year
+    if "view_month" not in st.session_state:
+        st.session_state.view_month = date.today().month
     
     # Sidebar
     with st.sidebar:
-        st.header("📅 Date Range")
-        
-        date_mode = st.radio(
-            "Select range",
-            ["1 Week", "1 Month", "Custom"],
-            horizontal=True,
+        st.header("🏡 Listings")
+        listing_options = list(ICAL_FEEDS.keys())
+        listing_filter = st.multiselect(
+            "Filter listings",
+            options=listing_options,
+            default=listing_options,
+            format_func=lambda x: LISTING_DISPLAY_NAMES.get(x, x),
         )
+        if not listing_filter:
+            listing_filter = listing_options
+        
+        st.header("📅 Date Range (for List/Summary)")
+        date_mode = st.radio("Select range", ["1 Week", "1 Month", "Custom"], horizontal=True)
         
         today = date.today()
         if date_mode == "1 Week":
@@ -835,52 +967,23 @@ def main():
             start_date = col1.date_input("Start", today)
             end_date = col2.date_input("End", today + timedelta(days=30))
         
-        st.write(f"**{start_date} to {end_date}**")
-        
-        st.header("🏡 Listings")
-        listing_options = list(ICAL_FEEDS.keys())
-        listing_filter = st.multiselect(
-            "Filter listings",
-            options=listing_options,
-            default=listing_options,
-            format_func=lambda x: LISTING_DISPLAY_NAMES.get(x, x),
-        )
-        
-        if not listing_filter:
-            listing_filter = listing_options
-        
-        # Refresh button
         if st.button("🔄 Refresh Feeds"):
             st.cache_data.clear()
             st.rerun()
         
         st.header("📊 CSV Enrichment")
         csv_enabled = st.checkbox("Enable reservations CSV")
-        
-        alias_store_path = st.text_input(
-            "Alias store path",
-            value=DEFAULT_ALIAS_STORE_PATH,
-        )
+        alias_store_path = st.text_input("Alias store path", value=DEFAULT_ALIAS_STORE_PATH)
         
         res_df = pd.DataFrame()
         csv_warnings = []
         alias_store = load_alias_store(alias_store_path)
         
         if csv_enabled:
-            csv_source = st.radio(
-                "CSV Source",
-                ["Upload", "Server Path"],
-                horizontal=True,
-            )
-            
-            csv_content = None
+            csv_source = st.radio("CSV Source", ["Upload", "Server Path"], horizontal=True)
             
             if csv_source == "Upload":
-                uploaded_files = st.file_uploader(
-                    "Upload CSV files",
-                    type=["csv"],
-                    accept_multiple_files=True,
-                )
+                uploaded_files = st.file_uploader("Upload CSV files", type=["csv"], accept_multiple_files=True)
                 if uploaded_files:
                     all_dfs = []
                     for uf in uploaded_files:
@@ -920,12 +1023,10 @@ def main():
             if not res_df.empty:
                 st.success(f"Loaded {len(res_df)} reservations")
                 
-                # Show unknown listings resolver
                 unknown = res_df[res_df["listing_key"] == "unknown"]
                 if not unknown.empty:
                     with st.expander(f"⚠️ Resolve Unknown Listings ({len(unknown)} rows)"):
                         unknown_listings = unknown["listing_raw"].unique()
-                        
                         new_mappings = {}
                         for listing_raw in unknown_listings:
                             listing_norm = canonicalize_listing(listing_raw)
@@ -933,41 +1034,38 @@ def main():
                                 f'"{listing_raw[:40]}..."',
                                 options=["unknown"] + list(ICAL_FEEDS.keys()),
                                 key=f"resolve_{listing_norm}",
-                                format_func=lambda x: LISTING_DISPLAY_NAMES.get(x, x),
+                                format_func=lambda x: LISTING_DISPLAY_NAMES.get(x, x) if x != "unknown" else "Unknown",
                             )
                             if selected != "unknown":
                                 new_mappings[listing_norm] = (selected, listing_raw)
                         
-                        if new_mappings:
-                            if st.button("💾 Save Mappings"):
-                                for norm, (key, raw) in new_mappings.items():
-                                    alias_store = add_alias(alias_store, norm, key, "user", 1.0, raw)
-                                if save_alias_store(alias_store, alias_store_path):
-                                    st.success("Mappings saved!")
-                                    st.cache_data.clear()
-                                    st.rerun()
+                        if new_mappings and st.button("💾 Save Mappings"):
+                            for norm, (key, raw) in new_mappings.items():
+                                alias_store = add_alias(alias_store, norm, key, "user", 1.0, raw)
+                            if save_alias_store(alias_store, alias_store_path):
+                                st.success("Mappings saved!")
+                                st.cache_data.clear()
+                                st.rerun()
             
             if csv_warnings:
                 for warn in csv_warnings:
                     st.warning(warn)
         
-        # Alias store admin
-        st.header("🔧 Alias Store Admin")
+        st.header("🔧 Admin")
         col1, col2 = st.columns(2)
-        if col1.button("Reload Alias File"):
+        if col1.button("Reload Aliases"):
             alias_store = load_alias_store(alias_store_path)
             st.success("Reloaded")
         
         with col2:
-            confirm_reset = st.checkbox("Confirm reset")
-            if st.button("Reset Alias File", disabled=not confirm_reset):
+            confirm_reset = st.checkbox("Confirm")
+            if st.button("Reset", disabled=not confirm_reset):
                 alias_store = get_default_alias_store()
                 if save_alias_store(alias_store, alias_store_path):
                     st.success("Reset complete")
                     st.cache_data.clear()
                     st.rerun()
     
-    # Main content
     # Fetch iCal feeds
     with st.spinner("Fetching calendar feeds..."):
         ical_df, feed_errors = fetch_all_ical_feeds()
@@ -975,7 +1073,6 @@ def main():
     # Enrich with CSV if enabled
     if csv_enabled and not res_df.empty:
         enriched_df = enrich_ical_events(ical_df, res_df)
-        # Save updated alias store
         save_alias_store(alias_store, alias_store_path)
     else:
         enriched_df = ical_df.copy()
@@ -984,39 +1081,64 @@ def main():
             enriched_df["guest_name"] = None
             enriched_df["earnings"] = None
     
-    # Show feed errors
     if feed_errors:
         with st.expander(f"⚠️ {len(feed_errors)} Feed Errors"):
             for key, error in feed_errors.items():
                 st.error(f"{LISTING_DISPLAY_NAMES.get(key, key)}: {error}")
     
     # Tabs
-    tabs = st.tabs(["📅 Month Calendar", "📋 List View", "📊 Summary", "🔍 Diagnostics"])
+    tab1, tab2, tab3 = st.tabs(["📅 Month Calendar", "📋 List View", "📊 Summary"])
     
-    with tabs[0]:
-        # Month calendar view
+    with tab1:
+        # Navigation buttons
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+        
+        with col1:
+            if st.button("◀ Prev", use_container_width=True):
+                if st.session_state.view_month == 1:
+                    st.session_state.view_month = 12
+                    st.session_state.view_year -= 1
+                else:
+                    st.session_state.view_month -= 1
+                st.rerun()
+        
+        with col2:
+            if st.button("Today", use_container_width=True):
+                st.session_state.view_year = date.today().year
+                st.session_state.view_month = date.today().month
+                st.rerun()
+        
+        with col3:
+            month_name = cal_module.month_name[st.session_state.view_month]
+            st.markdown(f"<h2 style='text-align:center; color:#4ECDC4; margin:0;'>{month_name} {st.session_state.view_year}</h2>", unsafe_allow_html=True)
+        
+        with col5:
+            if st.button("Next ▶", use_container_width=True):
+                if st.session_state.view_month == 12:
+                    st.session_state.view_month = 1
+                    st.session_state.view_year += 1
+                else:
+                    st.session_state.view_month += 1
+                st.rerun()
+        
+        # Render calendar
         if enriched_df.empty:
             st.info("No calendar events found.")
         else:
-            # Navigation
-            col1, col2, col3 = st.columns([1, 2, 1])
-            
-            view_year = col2.number_input("Year", min_value=2020, max_value=2030, 
-                                         value=start_date.year, key="cal_year")
-            view_month = col2.number_input("Month", min_value=1, max_value=12, 
-                                          value=start_date.month, key="cal_month")
-            
-            render_month_calendar(enriched_df, int(view_year), int(view_month), listing_filter)
+            calendar_html = render_calendar_html(
+                enriched_df, 
+                st.session_state.view_year, 
+                st.session_state.view_month, 
+                listing_filter
+            )
+            st.components.v1.html(calendar_html, height=700, scrolling=True)
     
-    with tabs[1]:
+    with tab2:
         show_unmatched = st.checkbox("Show only unmatched blocks", key="list_unmatched")
         render_list_view(enriched_df, start_date, end_date, listing_filter, show_unmatched)
     
-    with tabs[2]:
+    with tab3:
         render_summary(enriched_df, res_df, start_date, end_date, listing_filter, csv_enabled)
-    
-    with tabs[3]:
-        render_diagnostics(res_df, alias_store, feed_errors)
 
 
 if __name__ == "__main__":
