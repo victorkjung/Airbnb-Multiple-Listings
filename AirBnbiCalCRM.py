@@ -511,18 +511,21 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
     # Get calendar structure
     cal = cal_module.Calendar(firstweekday=6)  # Sunday first
     month_days = cal.monthdayscalendar(year, month)
-    month_name = cal_module.month_name[month]
     
-    # First and last day of month
+    # First day of month for reference
     first_of_month = date(year, month, 1)
-    if month == 12:
-        first_of_next = date(year + 1, 1, 1)
-    else:
-        first_of_next = date(year, month + 1, 1)
-    last_of_month = first_of_next - timedelta(days=1)
     
-    # Build event segments for each row (week)
-    # For each event, we need to track which weeks it spans and create segments
+    def get_week_dates(week, week_idx, month_days, year, month):
+        """Get actual dates for each day in a week row."""
+        dates = []
+        first_valid_idx = next((i for i, d in enumerate(week) if d > 0), None)
+        
+        for day_idx, day in enumerate(week):
+            if day > 0:
+                dates.append(date(year, month, day))
+            else:
+                dates.append(None)
+        return dates
     
     def get_week_segments(events_df, month_days, year, month):
         """Calculate event segments for each week row."""
@@ -530,58 +533,47 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         
         for _, event in events_df.iterrows():
             event_start = event["start_date"]
-            event_end = event["end_date"] - timedelta(days=1)  # End date is exclusive, show last night
+            event_end = event["end_date"] - timedelta(days=1)  # End date is exclusive
+            
+            if event_end < event_start:
+                event_end = event_start
             
             for week_idx, week in enumerate(month_days):
-                week_dates = []
-                for day_idx, day in enumerate(week):
-                    if day == 0:
-                        # Calculate actual date for padding days
-                        if week_idx == 0:
-                            # Days from previous month
-                            prev_month_day = first_of_month - timedelta(days=(7 - day_idx - week.index(next(d for d in week if d > 0))))
-                            week_dates.append(None)
-                        else:
-                            week_dates.append(None)
-                    else:
-                        week_dates.append(date(year, month, day))
+                week_dates = get_week_dates(week, week_idx, month_days, year, month)
+                valid_dates = [(i, d) for i, d in enumerate(week_dates) if d is not None]
                 
-                # Find valid date range for this week
-                valid_dates = [d for d in week_dates if d is not None]
                 if not valid_dates:
                     continue
-                    
-                week_start = valid_dates[0]
-                week_end = valid_dates[-1]
+                
+                week_start_idx, week_start_date = valid_dates[0]
+                week_end_idx, week_end_date = valid_dates[-1]
                 
                 # Check if event overlaps with this week
-                if event_start <= week_end and event_end >= week_start:
-                    # Calculate segment within this week
-                    seg_start = max(event_start, week_start)
-                    seg_end = min(event_end, week_end)
+                if event_start <= week_end_date and event_end >= week_start_date:
+                    # Calculate segment bounds
+                    seg_start_date = max(event_start, week_start_date)
+                    seg_end_date = min(event_end, week_end_date)
                     
                     # Find column indices
                     start_col = None
                     end_col = None
+                    
                     for col_idx, d in enumerate(week_dates):
-                        if d == seg_start:
-                            start_col = col_idx
-                        if d == seg_end:
-                            end_col = col_idx
-                    
-                    # Handle cases where segment extends beyond visible days
-                    if start_col is None:
-                        for col_idx, day in enumerate(week):
-                            if day > 0:
+                        if d is not None:
+                            if d == seg_start_date:
                                 start_col = col_idx
-                                break
-                    if end_col is None:
-                        for col_idx in range(6, -1, -1):
-                            if week[col_idx] > 0:
+                            if d == seg_end_date:
                                 end_col = col_idx
-                                break
                     
-                    if start_col is not None and end_col is not None:
+                    # If segment starts before visible week
+                    if start_col is None and event_start < week_start_date:
+                        start_col = week_start_idx
+                    
+                    # If segment ends after visible week
+                    if end_col is None and event_end > week_end_date:
+                        end_col = week_end_idx
+                    
+                    if start_col is not None and end_col is not None and start_col <= end_col:
                         segments_by_week[week_idx].append({
                             "event": event,
                             "start_col": start_col,
@@ -593,20 +585,16 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
     
     segments_by_week = get_week_segments(events, month_days, year, month)
     
-    # Assign rows to segments to avoid overlaps
     def assign_rows(segments):
         """Assign vertical row positions to segments to avoid overlaps."""
         if not segments:
             return []
         
-        # Sort by start column
         sorted_segs = sorted(segments, key=lambda s: (s["start_col"], -s["span"]))
-        
-        rows = []  # List of end columns for each row
+        rows = []
         result = []
         
         for seg in sorted_segs:
-            # Find first row where this segment fits
             assigned_row = None
             for row_idx, row_end in enumerate(rows):
                 if seg["start_col"] > row_end:
@@ -622,7 +610,7 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         
         return result
     
-    # CSS styles
+    # CSS styles - using table layout for proper spanning
     css = """
     <style>
     .calendar-container {
@@ -631,17 +619,7 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         border-radius: 12px;
         padding: 20px;
         color: white;
-    }
-    .calendar-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    .month-title {
-        font-size: 28px;
-        font-weight: 600;
-        color: #4ECDC4;
+        width: 100%;
     }
     .legend {
         display: flex;
@@ -662,15 +640,13 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         height: 12px;
         border-radius: 50%;
     }
-    .calendar-grid {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 1px;
-        background: #2d2d44;
-        border-radius: 8px;
-        overflow: hidden;
+    .calendar-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 2px;
+        table-layout: fixed;
     }
-    .calendar-header-cell {
+    .calendar-table th {
         background: #252538;
         padding: 12px 8px;
         text-align: center;
@@ -678,19 +654,22 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         font-size: 12px;
         color: #888;
         text-transform: uppercase;
+        border-radius: 4px;
     }
-    .calendar-week {
-        display: contents;
-    }
-    .calendar-cell {
+    .calendar-table td {
         background: #1e1e32;
-        min-height: 100px;
-        padding: 8px;
-        position: relative;
         vertical-align: top;
+        padding: 0;
+        border-radius: 4px;
+        height: 100px;
+        position: relative;
     }
-    .calendar-cell.empty {
+    .calendar-table td.empty {
         background: #18182a;
+    }
+    .day-cell {
+        padding: 8px;
+        height: 100%;
     }
     .day-number {
         font-size: 14px;
@@ -698,12 +677,22 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         color: #ccc;
         margin-bottom: 4px;
     }
-    .events-container {
+    .week-row {
         position: relative;
-        margin-top: 4px;
+    }
+    .events-row {
+        height: 0;
+        position: relative;
+    }
+    .events-row td {
+        height: 0;
+        padding: 0;
+        background: transparent;
+        border: none;
+        position: relative;
+        overflow: visible;
     }
     .event-bar {
-        position: absolute;
         height: 26px;
         border-radius: 4px;
         display: flex;
@@ -715,6 +704,7 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         overflow: hidden;
         white-space: nowrap;
         box-sizing: border-box;
+        margin: 2px 4px;
     }
     .event-letter {
         width: 18px;
@@ -733,10 +723,13 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         overflow: hidden;
         text-overflow: ellipsis;
     }
+    .event-spacer {
+        height: 30px;
+    }
     </style>
     """
     
-    # Build HTML
+    # Build HTML using table for proper colspan
     html_parts = [css, '<div class="calendar-container">']
     
     # Legend
@@ -752,50 +745,70 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         ''')
     html_parts.append('</div>')
     
-    # Calendar grid
-    html_parts.append('<div class="calendar-grid">')
+    # Calendar table
+    html_parts.append('<table class="calendar-table">')
     
     # Header row
+    html_parts.append('<thead><tr>')
     for day_name in ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]:
-        html_parts.append(f'<div class="calendar-header-cell">{day_name}</div>')
+        html_parts.append(f'<th>{day_name}</th>')
+    html_parts.append('</tr></thead>')
+    
+    html_parts.append('<tbody>')
     
     # Week rows
     for week_idx, week in enumerate(month_days):
         week_segments = assign_rows(segments_by_week[week_idx])
         max_rows = max([s["row"] for s in week_segments], default=-1) + 1
-        cell_height = max(100, 40 + max_rows * 30)
         
+        # Day numbers row
+        html_parts.append('<tr class="week-row">')
         for day_idx, day in enumerate(week):
             if day == 0:
-                html_parts.append(f'<div class="calendar-cell empty" style="min-height:{cell_height}px"></div>')
+                html_parts.append('<td class="empty"><div class="day-cell"></div></td>')
             else:
-                html_parts.append(f'<div class="calendar-cell" style="min-height:{cell_height}px">')
-                html_parts.append(f'<div class="day-number">{day}</div>')
-                html_parts.append('<div class="events-container">')
+                # Calculate how many event spacers needed
+                spacer_html = '<div class="event-spacer"></div>' * max_rows
+                html_parts.append(f'<td><div class="day-cell"><div class="day-number">{day}</div>{spacer_html}</div></td>')
+        html_parts.append('</tr>')
+        
+        # Event rows - one row per event vertical level
+        for row_level in range(max_rows):
+            html_parts.append('<tr class="events-row">')
+            col = 0
+            level_segments = [s for s in week_segments if s["row"] == row_level]
+            level_segments.sort(key=lambda s: s["start_col"])
+            
+            for seg in level_segments:
+                # Add empty cells before this segment
+                while col < seg["start_col"]:
+                    html_parts.append('<td></td>')
+                    col += 1
                 
-                # Add event bars that start on this day
-                for seg in week_segments:
-                    if seg["start_col"] == day_idx:
-                        event = seg["event"]
-                        listing_key = event["listing_key"]
-                        color = LISTING_COLORS.get(listing_key, "#888")
-                        letter = LISTING_LETTERS.get(listing_key, "?")
-                        name = LISTING_DISPLAY_NAMES.get(listing_key, listing_key)
-                        
-                        # Calculate width as percentage
-                        width_percent = seg["span"] * 100
-                        top_offset = seg["row"] * 30
-                        
-                        html_parts.append(f'''
-                            <div class="event-bar" style="background:{color}; width:calc({width_percent}% + {(seg["span"]-1)}px); top:{top_offset}px; left:0;">
-                                <span class="event-letter">{letter}</span>
-                                <span class="event-name">{name}</span>
-                            </div>
-                        ''')
+                # Add the event bar spanning multiple cells
+                event = seg["event"]
+                listing_key = event["listing_key"]
+                color = LISTING_COLORS.get(listing_key, "#888")
+                letter = LISTING_LETTERS.get(listing_key, "?")
+                name = LISTING_DISPLAY_NAMES.get(listing_key, listing_key)
                 
-                html_parts.append('</div></div>')
+                colspan = seg["span"]
+                html_parts.append(f'''<td colspan="{colspan}">
+                    <div class="event-bar" style="background:{color};">
+                        <span class="event-letter">{letter}</span>
+                        <span class="event-name">{name}</span>
+                    </div>
+                </td>''')
+                col += colspan
+            
+            # Fill remaining cells
+            while col < 7:
+                html_parts.append('<td></td>')
+                col += 1
+            
+            html_parts.append('</tr>')
     
-    html_parts.append('</div></div>')
+    html_parts.append('</tbody></table></div>')
     
     return ''.join(html_parts)
 
