@@ -69,20 +69,43 @@ This repo is ready to deploy on [Streamlit Community Cloud](https://share.stream
 
 ## Configuration
 
-### Adding or Modifying Listings
+### Configuring iCal Feeds (Secrets)
 
-Edit the `ICAL_FEEDS` dictionary in `AirBnbiCalCRM.py`:
+iCal URLs contain a token that grants read access to your calendar, so they
+are loaded from **Streamlit secrets**, not from source.
 
-```python
-ICAL_FEEDS = {
-    "Listing Name": {
-        "url": "https://www.airbnb.com/calendar/ical/YOUR_ID.ics?t=YOUR_TOKEN",
-        "id": "YOUR_ID",
-        "color": "#FF5A5F"  # Hex color for calendar display
-    },
-    # Add more listings...
-}
+**Local development**
+
+1. Copy the template:
+   ```bash
+   cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+   ```
+2. Fill in the real URLs in `.streamlit/secrets.toml`. This file is
+   gitignored.
+
+**Streamlit Community Cloud**
+
+In your app's dashboard, go to **⋯ → Settings → Secrets** and paste:
+
+```toml
+[ical_feeds]
+lanesville = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"
+milla      = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"
+westkill   = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"
+millerroad = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"
 ```
+
+**Environment variables (fallback)**
+
+If secrets aren't available (e.g. a container deploy), set
+`ICAL_FEED_LANESVILLE`, `ICAL_FEED_MILLA`, `ICAL_FEED_WESTKILL`, and
+`ICAL_FEED_MILLERROAD` instead.
+
+### Adding More Listings
+
+To wire up additional listings, add an entry to the `ical_feeds` secrets
+block and a matching entry in `LISTING_DISPLAY_NAMES`, `LISTING_COLORS`,
+and `LISTING_LETTERS` in `AirBnbiCalCRM.py`.
 
 ### Finding Your Airbnb iCal URL
 

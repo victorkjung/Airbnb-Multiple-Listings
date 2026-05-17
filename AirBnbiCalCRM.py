@@ -20,12 +20,32 @@ import hashlib
 # CONFIGURATION
 # ============================================================================
 
-ICAL_FEEDS = {
-    "lanesville": "https://www.airbnb.com/calendar/ical/52260561.ics?t=5b901a38421d4320ba225a8d1f1c2c80",
-    "milla": "https://www.airbnb.com/calendar/ical/907278153520205895.ics?t=577b74f67d454da8a5cbe85de23549a7",
-    "westkill": "https://www.airbnb.com/calendar/ical/818696761794452121.ics?t=0b0f20612dc74ab8b19c85b454a191b7",
-    "millerroad": "https://www.airbnb.com/calendar/ical/2105131.ics?t=e157f31bee7341a59209c4971602f816",
-}
+def load_ical_feeds() -> Dict[str, str]:
+    """Load iCal feed URLs from Streamlit secrets, with env-var fallback.
+
+    Expected secrets.toml shape:
+        [ical_feeds]
+        lanesville = "https://www.airbnb.com/calendar/ical/..."
+        milla      = "https://..."
+        westkill   = "https://..."
+        millerroad = "https://..."
+    """
+    try:
+        feeds = st.secrets.get("ical_feeds", {})
+        if feeds:
+            return {str(k): str(v) for k, v in dict(feeds).items()}
+    except (FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
+        pass
+
+    env_feeds = {}
+    for key in ("lanesville", "milla", "westkill", "millerroad"):
+        url = os.environ.get(f"ICAL_FEED_{key.upper()}")
+        if url:
+            env_feeds[key] = url
+    return env_feeds
+
+
+ICAL_FEEDS = load_ical_feeds()
 
 LISTING_DISPLAY_NAMES = {
     "lanesville": "Lanesville",
@@ -1091,6 +1111,31 @@ def main():
         '</div>',
         unsafe_allow_html=True,
     )
+
+    if not ICAL_FEEDS:
+        st.error(
+            "**No iCal feeds configured.** Add your Airbnb iCal URLs to "
+            "Streamlit secrets to get started."
+        )
+        with st.expander("Show setup instructions", expanded=True):
+            st.markdown(
+                "**On Streamlit Community Cloud:** open your app → ⋯ → "
+                "**Settings** → **Secrets**, then paste:\n"
+            )
+            st.code(
+                '[ical_feeds]\n'
+                'lanesville = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"\n'
+                'milla      = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"\n'
+                'westkill   = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"\n'
+                'millerroad = "https://www.airbnb.com/calendar/ical/<id>.ics?t=<token>"\n',
+                language="toml",
+            )
+            st.markdown(
+                "**Locally:** copy `.streamlit/secrets.toml.example` to "
+                "`.streamlit/secrets.toml` and fill in your URLs. The "
+                "`.streamlit/secrets.toml` file is gitignored."
+            )
+        st.stop()
     
     # Initialize session state for month navigation
     if "view_year" not in st.session_state:
