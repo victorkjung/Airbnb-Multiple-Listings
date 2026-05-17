@@ -35,11 +35,11 @@ LISTING_DISPLAY_NAMES = {
 }
 
 LISTING_COLORS = {
-    "lanesville": "#F87171",  # Coral red
-    "milla": "#2DD4BF",       # Teal
-    "westkill": "#FB923C",    # Orange
-    "millerroad": "#6B7280",  # Gray
-    "unknown": "#9CA3AF",
+    "lanesville": "#FF90E8",   # Gumroad pink
+    "milla": "#23A094",        # Gumroad teal
+    "westkill": "#FFC900",     # Gumroad yellow
+    "millerroad": "#90A8ED",   # Gumroad periwinkle
+    "unknown": "#DDDDDD",
 }
 
 LISTING_LETTERS = {
@@ -610,62 +610,86 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
         
         return result
     
-    # CSS styles - using table layout for proper spanning
+    # Gumroad-style CSS: hard black borders, offset shadows, bright accent fills
     css = """
     <style>
     .calendar-container {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 20px;
-        color: white;
+        font-family: 'Mabry Pro', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FFFFFF;
+        border: 3px solid #000000;
+        border-radius: 4px;
+        box-shadow: 6px 6px 0 0 #000000;
+        padding: 24px;
+        color: #000000;
         width: 100%;
     }
     .legend {
         display: flex;
-        gap: 20px;
-        margin-bottom: 15px;
-        padding: 10px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 8px;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
     }
     .legend-item {
-        display: flex;
+        display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-size: 14px;
+        font-size: 13px;
+        font-weight: 600;
+        background: #FFFFFF;
+        border: 2px solid #000000;
+        border-radius: 4px;
+        padding: 6px 12px;
+        box-shadow: 3px 3px 0 0 #000000;
+        color: #000000;
     }
     .legend-dot {
-        width: 12px;
-        height: 12px;
+        width: 14px;
+        height: 14px;
         border-radius: 50%;
+        border: 2px solid #000000;
     }
     .calendar-table {
         width: 100%;
         border-collapse: separate;
-        border-spacing: 2px;
+        border-spacing: 0;
         table-layout: fixed;
+        border: 2px solid #000000;
+        background: #FFFFFF;
     }
     .calendar-table th {
-        background: #252538;
+        background: #FFC900;
         padding: 12px 8px;
         text-align: center;
-        font-weight: 600;
+        font-weight: 800;
         font-size: 12px;
-        color: #888;
+        color: #000000;
         text-transform: uppercase;
-        border-radius: 4px;
+        letter-spacing: 0.06em;
+        border: 2px solid #000000;
+        border-top: 0;
+        border-left: 0;
     }
+    .calendar-table th:first-child { border-left: 0; }
+    .calendar-table th:last-child { border-right: 0; }
     .calendar-table td {
-        background: #1e1e32;
+        background: #FFFFFF;
         vertical-align: top;
         padding: 0;
-        border-radius: 4px;
-        height: 100px;
+        height: 110px;
         position: relative;
+        border-right: 2px solid #000000;
+        border-bottom: 2px solid #000000;
     }
+    .calendar-table tr td:last-child { border-right: 0; }
+    .calendar-table tr:last-child td { border-bottom: 0; }
     .calendar-table td.empty {
-        background: #18182a;
+        background: repeating-linear-gradient(
+            45deg,
+            #F4F4F0,
+            #F4F4F0 6px,
+            #EAEAE2 6px,
+            #EAEAE2 12px
+        );
     }
     .day-cell {
         padding: 8px;
@@ -673,8 +697,8 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
     }
     .day-number {
         font-size: 14px;
-        font-weight: 500;
-        color: #ccc;
+        font-weight: 700;
+        color: #000000;
         margin-bottom: 4px;
     }
     .week-row {
@@ -694,28 +718,31 @@ def render_calendar_html(enriched_df: pd.DataFrame, year: int, month: int, listi
     }
     .event-bar {
         height: 26px;
-        border-radius: 4px;
+        border: 2px solid #000000;
+        border-radius: 2px;
         display: flex;
         align-items: center;
         padding: 0 8px;
         font-size: 12px;
-        font-weight: 500;
-        color: white;
+        font-weight: 700;
+        color: #000000;
         overflow: hidden;
         white-space: nowrap;
         box-sizing: border-box;
         margin: 2px 4px;
+        box-shadow: 2px 2px 0 0 #000000;
     }
     .event-letter {
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        background: rgba(0,0,0,0.3);
+        background: #000000;
+        color: #FFFFFF;
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 10px;
-        font-weight: 700;
+        font-weight: 800;
         margin-right: 6px;
         flex-shrink: 0;
     }
@@ -922,29 +949,148 @@ def render_diagnostics(res_df: pd.DataFrame, alias_store: Dict, feed_errors: Dic
 
 def main():
     st.set_page_config(page_title="Multi-Listing Calendar Dashboard", page_icon="🏠", layout="wide")
-    
-    # Custom CSS for dark theme
+
+    # Gumroad-style page theme
     st.markdown("""
     <style>
-    .main-header {
+    :root {
+        --gr-pink: #FF90E8;
+        --gr-yellow: #FFC900;
+        --gr-bg: #F4F4F0;
+        --gr-ink: #000000;
+        --gr-paper: #FFFFFF;
+    }
+    html, body, [class*="css"], .stApp {
+        font-family: 'Mabry Pro', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .stApp {
+        background: var(--gr-bg);
+        color: var(--gr-ink);
+    }
+    section[data-testid="stSidebar"] {
+        background: var(--gr-paper);
+        border-right: 3px solid var(--gr-ink);
+    }
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        color: var(--gr-ink);
+        font-weight: 800;
+        letter-spacing: -0.01em;
+    }
+    /* Hero header card */
+    .gr-hero {
+        background: var(--gr-yellow);
+        border: 3px solid var(--gr-ink);
+        border-radius: 6px;
+        box-shadow: 8px 8px 0 0 var(--gr-ink);
+        padding: 28px 32px;
+        margin-bottom: 28px;
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 8px;
+        gap: 18px;
     }
-    .main-header h1 {
+    .gr-hero-emoji {
+        font-size: 52px;
+        line-height: 1;
+        background: var(--gr-pink);
+        border: 3px solid var(--gr-ink);
+        border-radius: 6px;
+        padding: 6px 14px;
+        box-shadow: 4px 4px 0 0 var(--gr-ink);
+    }
+    .gr-hero h1 {
         margin: 0;
-        font-size: 32px;
+        font-size: 38px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        color: var(--gr-ink);
     }
-    .subtitle {
-        color: #888;
-        margin-bottom: 20px;
+    .gr-hero p {
+        margin: 4px 0 0 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--gr-ink);
+        opacity: 0.85;
+    }
+    /* Buttons */
+    .stButton > button, .stDownloadButton > button {
+        background: var(--gr-paper);
+        color: var(--gr-ink);
+        border: 2px solid var(--gr-ink);
+        border-radius: 4px;
+        font-weight: 700;
+        box-shadow: 3px 3px 0 0 var(--gr-ink);
+        transition: transform 0.05s ease, box-shadow 0.05s ease;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        background: var(--gr-pink);
+        color: var(--gr-ink);
+        border-color: var(--gr-ink);
+    }
+    .stButton > button:active, .stDownloadButton > button:active {
+        transform: translate(3px, 3px);
+        box-shadow: 0 0 0 0 var(--gr-ink);
+    }
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 3px solid var(--gr-ink);
+        padding-bottom: 0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: var(--gr-paper);
+        border: 2px solid var(--gr-ink);
+        border-bottom: none;
+        border-radius: 4px 4px 0 0;
+        padding: 8px 16px;
+        font-weight: 700;
+        color: var(--gr-ink);
+    }
+    .stTabs [aria-selected="true"] {
+        background: var(--gr-pink) !important;
+        color: var(--gr-ink) !important;
+    }
+    /* Inputs */
+    .stTextInput input, .stDateInput input, .stMultiSelect [data-baseweb="select"] > div,
+    .stSelectbox [data-baseweb="select"] > div, .stFileUploader [data-testid="stFileUploaderDropzone"] {
+        border: 2px solid var(--gr-ink) !important;
+        border-radius: 4px !important;
+        background: var(--gr-paper) !important;
+    }
+    /* DataFrames / containers */
+    [data-testid="stDataFrame"] {
+        border: 2px solid var(--gr-ink);
+        border-radius: 4px;
+        box-shadow: 4px 4px 0 0 var(--gr-ink);
+    }
+    /* Metrics */
+    [data-testid="stMetric"] {
+        background: var(--gr-paper);
+        border: 2px solid var(--gr-ink);
+        border-radius: 4px;
+        padding: 12px;
+        box-shadow: 4px 4px 0 0 var(--gr-ink);
+    }
+    /* Alerts */
+    .stAlert {
+        border: 2px solid var(--gr-ink) !important;
+        border-radius: 4px !important;
+        box-shadow: 3px 3px 0 0 var(--gr-ink) !important;
     }
     </style>
     """, unsafe_allow_html=True)
-    
-    st.markdown('<div class="main-header"><span style="font-size:40px">🏠</span><h1>Multi-Listing Calendar Dashboard</h1></div>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">View and filter booking blocks across multiple Airbnb listings</p>', unsafe_allow_html=True)
+
+    st.markdown(
+        '<div class="gr-hero">'
+        '<span class="gr-hero-emoji">🏠</span>'
+        '<div>'
+        '<h1>Multi-Listing Calendar</h1>'
+        '<p>Booking blocks across all your Airbnb listings — in one bright dashboard.</p>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     
     # Initialize session state for month navigation
     if "view_year" not in st.session_state:
@@ -1123,7 +1269,13 @@ def main():
         
         with col3:
             month_name = cal_module.month_name[st.session_state.view_month]
-            st.markdown(f"<h2 style='text-align:center; color:#4ECDC4; margin:0;'>{month_name} {st.session_state.view_year}</h2>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align:center; background:#FF90E8; border:3px solid #000;"
+                f" border-radius:6px; box-shadow:4px 4px 0 0 #000; padding:10px 16px;'>"
+                f"<h2 style='margin:0; color:#000; font-weight:900; letter-spacing:-0.02em;'>"
+                f"{month_name} {st.session_state.view_year}</h2></div>",
+                unsafe_allow_html=True,
+            )
         
         with col5:
             if st.button("Next ▶", use_container_width=True):
