@@ -48,16 +48,30 @@ A Streamlit application for viewing and filtering booking blocks across multiple
 
 4. **Run the application**
    ```bash
-   streamlit run app.py
+   streamlit run AirBnbiCalCRM.py
    ```
 
 5. **Open your browser** to `http://localhost:8501`
+
+## Deploy to Streamlit Community Cloud
+
+This repo is ready to deploy on [Streamlit Community Cloud](https://share.streamlit.io):
+
+1. Push your branch to GitHub (already done if you're reading this).
+2. Go to https://share.streamlit.io and click **New app**.
+3. Select this repository, the branch you want to deploy, and set the **Main file path** to:
+   ```
+   AirBnbiCalCRM.py
+   ```
+4. Click **Deploy**. Streamlit Cloud will install from `requirements.txt`, pick up the Python version from `runtime.txt`, and apply the Gumroad theme from `.streamlit/config.toml`.
+
+> Secrets (e.g. private iCal tokens) belong in the Streamlit Cloud **Secrets** UI — never commit `.streamlit/secrets.toml`.
 
 ## Configuration
 
 ### Adding or Modifying Listings
 
-Edit the `ICAL_FEEDS` dictionary in `app.py`:
+Edit the `ICAL_FEEDS` dictionary in `AirBnbiCalCRM.py`:
 
 ```python
 ICAL_FEEDS = {
