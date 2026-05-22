@@ -21,10 +21,10 @@ import hashlib
 # ============================================================================
 
 ICAL_FEEDS = {
-    "lanesville": "https://www.airbnb.com/calendar/ical/52260561.ics?t=5b901a38421d4320ba225a8d1f1c2c80",
-    "milla": "https://www.airbnb.com/calendar/ical/907278153520205895.ics?t=577b74f67d454da8a5cbe85de23549a7",
-    "westkill": "https://www.airbnb.com/calendar/ical/818696761794452121.ics?t=0b0f20612dc74ab8b19c85b454a191b7",
-    "millerroad": "https://www.airbnb.com/calendar/ical/2105131.ics?t=e157f31bee7341a59209c4971602f816",
+    "lanesville": "https://www.airbnb.com/calendar/ical/52260561.ics?t=",
+    "Milla": "https://www.airbnb.com/calendar/ical/907278153520205895.ics?t=",
+    "westkill": "https://www.airbnb.com/calendar/ical/818696761794452121.ics?t=",
+    "Millerroad": "https://www.airbnb.com/calendar/ical/2105131.ics?t=",
 }
 
 LISTING_DISPLAY_NAMES = {
